@@ -20,12 +20,61 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentVideoFile = null;
     let selectedEffect = 'none';
     let isPublishing = false;
-    let currentUser = JSON.parse(sessionStorage.getItem('youtok_session')) || null;
+    let currentUser = JSON.parse(localStorage.getItem('youtok_session')) || null;
     let isLoggedIn = !!currentUser;
     let currentCommentVideoId = null;
     let currentCommentVideoAuthor = null;
     let usersDB = JSON.parse(localStorage.getItem('youtok_users')) || [];
     let isRegisterMode = false;
+
+    // --- Логика скролла мышью (ЛКМ) и мобильные фиксы ---
+    let isDragging = false;
+    let startY, scrollTop;
+
+    videoFeed?.addEventListener('mousedown', (e) => {
+        isDragging = true;
+        videoFeed.classList.add('dragging');
+        startY = e.pageY - videoFeed.offsetTop;
+        scrollTop = videoFeed.scrollTop;
+    });
+    videoFeed?.addEventListener('mouseleave', () => {
+        if(!isDragging) return;
+        isDragging = false;
+        videoFeed.classList.remove('dragging');
+    });
+    videoFeed?.addEventListener('mouseup', () => {
+        if(!isDragging) return;
+        isDragging = false;
+        videoFeed.classList.remove('dragging');
+    });
+    videoFeed?.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+        e.preventDefault();
+        const y = e.pageY - videoFeed.offsetTop;
+        const walk = (y - startY) * 2; // Скорость перетаскивания
+        videoFeed.scrollTop = scrollTop - walk;
+    });
+
+    // --- Логика скролла стрелочками на клавиатуре ---
+    document.addEventListener('keydown', (e) => {
+        if (['ArrowUp', 'ArrowDown'].includes(e.key)) {
+            if (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA') return;
+            if (document.querySelectorAll('.modal:not(.hidden)').length > 0) return;
+            e.preventDefault();
+            
+            const posts = Array.from(document.querySelectorAll('.video-post'));
+            if (!posts.length) return;
+            
+            let currentIdx = posts.findIndex(p => p.getBoundingClientRect().top >= -10 && p.getBoundingClientRect().top <= window.innerHeight / 2);
+            if (currentIdx === -1) currentIdx = 0;
+
+            let nextIdx = currentIdx;
+            if (e.key === 'ArrowDown' && currentIdx < posts.length - 1) nextIdx++;
+            else if (e.key === 'ArrowUp' && currentIdx > 0) nextIdx--;
+            
+            if (currentIdx !== nextIdx) posts[nextIdx].scrollIntoView({ behavior: 'smooth' });
+        }
+    });
 
     if (isLoggedIn) {
         if (btnAuthModal) btnAuthModal.innerText = "Выйти";
@@ -38,7 +87,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if(index > -1) {
             usersDB[index] = currentUser;
             localStorage.setItem('youtok_users', JSON.stringify(usersDB));
-            sessionStorage.setItem('youtok_session', JSON.stringify(currentUser));
+            localStorage.setItem('youtok_session', JSON.stringify(currentUser));
             syncLocalFilesMock();
         }
     };
@@ -69,13 +118,16 @@ document.addEventListener('DOMContentLoaded', () => {
         entries.forEach(entry => {
             const vid = entry.target;
             if (entry.isIntersecting) {
-                vid.play().catch(() => {});
+                vid.play().catch(() => {
+                    vid.muted = true;
+                    vid.play().catch(() => {});
+                });
             } else {
                 vid.pause();
                 vid.currentTime = 0; // Сбрасываем видео в начало при уходе из зоны видимости
             }
         });
-    }, { threshold: 0.75 }); // Увеличен порог, чтобы точно играло только центральное видео
+    }, { threshold: 0.6 }); // Снижен порог, чтобы первое видео 100% воспроизводилось
 
     // --- Обертка для проверки авторизации ---
     const requireAuth = (actionCallback) => {
@@ -90,7 +142,7 @@ document.addEventListener('DOMContentLoaded', () => {
             currentUser = null;
             btnAuthModal.innerText = "Войти";
             btnProfile.classList.add('hidden');
-            sessionStorage.removeItem('youtok_session');
+            localStorage.removeItem('youtok_session');
             alert("Вы вышли из аккаунта.");
         } else {
             modalAuth.classList.remove('hidden');
@@ -122,7 +174,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         
         isLoggedIn = true;
-        sessionStorage.setItem('youtok_session', JSON.stringify(currentUser));
+        localStorage.setItem('youtok_session', JSON.stringify(currentUser));
         modalAuth.classList.add('hidden');
         btnAuthModal.innerText = "Выйти";
         if(btnProfile) btnProfile.classList.remove('hidden');
@@ -223,9 +275,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const isFollowed = currentUser?.following?.includes(video.author) ? 'followed' : '';
         const followIcon = isFollowed ? 'fa-check' : 'fa-plus';
 
+        const videoDate = new Date(parseInt(video.id.replace('vid-', '')));
+        const dateStr = isNaN(videoDate) ? '' : videoDate.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' });
+
         const postHTML = `
             <div class="video-post" id="${video.id}">
-                <video src="${videoUrl}" poster="${video.cover || ''}" style="filter: ${video.effect};" loop playsinline onclick="this.paused ? this.play() : this.pause()"></video>
+                <video src="${videoUrl}" poster="${video.cover || ''}" style="filter: ${video.effect};" loop playsinline></video>
                 <div class="sidebar">
                     <div class="action-item avatar-wrapper ${isFollowed}" onclick="toggleFollow('${video.author}', this)">
                         <img src="${getAvatar(video.author)}" alt="Avatar">
@@ -252,6 +307,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <h3>${video.author}</h3>
                     <h4 class="vid-title">${video.title || 'Без названия'}</h4>
                     <p class="vid-desc">${video.desc || '#youtok'}</p>
+                    <p class="vid-date" style="font-size:11px; color:#ccc; margin-top:4px;">${dateStr}</p>
                 </div>
             </div>`;
         
@@ -265,7 +321,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const addedEl = document.getElementById(video.id);
         if (addedEl) {
             const vid = addedEl.querySelector('video');
-            if (vid) videoObserver.observe(vid);
+            if (vid) {
+                videoObserver.observe(vid);
+                vid.addEventListener('click', () => {
+                    if (vid.paused) vid.play();
+                    else vid.pause();
+                });
+            }
         }
     };
 
