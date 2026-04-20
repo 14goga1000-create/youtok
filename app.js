@@ -29,10 +29,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Логика скролла мышью (ЛКМ) и мобильные фиксы ---
     let isDragging = false;
+    let isMoved = false;
     let startY, scrollTop;
 
     videoFeed?.addEventListener('mousedown', (e) => {
         isDragging = true;
+        isMoved = false;
         videoFeed.classList.add('dragging');
         startY = e.pageY - videoFeed.offsetTop;
         scrollTop = videoFeed.scrollTop;
@@ -45,14 +47,33 @@ document.addEventListener('DOMContentLoaded', () => {
     videoFeed?.addEventListener('mouseup', () => {
         if(!isDragging) return;
         isDragging = false;
-        videoFeed.classList.remove('dragging');
+        setTimeout(() => videoFeed.classList.remove('dragging'), 10);
     });
     videoFeed?.addEventListener('mousemove', (e) => {
         if (!isDragging) return;
+        isMoved = true;
         e.preventDefault();
         const y = e.pageY - videoFeed.offsetTop;
         const walk = (y - startY) * 2; // Скорость перетаскивания
         videoFeed.scrollTop = scrollTop - walk;
+    });
+
+    videoFeed?.addEventListener('click', (e) => {
+        if (isMoved) {
+            isMoved = false;
+            return;
+        }
+        const vid = e.target.closest('video');
+        if (vid) {
+            if (vid.muted) {
+                vid.muted = false;
+                vid.currentTime = 0;
+                vid.play().catch(()=>{});
+            } else {
+                if (vid.paused) vid.play().catch(()=>{});
+                else vid.pause();
+            }
+        }
     });
 
     // --- Логика скролла стрелочками на клавиатуре ---
@@ -118,10 +139,13 @@ document.addEventListener('DOMContentLoaded', () => {
         entries.forEach(entry => {
             const vid = entry.target;
             if (entry.isIntersecting) {
-                vid.play().catch(() => {
+            const playPromise = vid.play();
+            if (playPromise !== undefined) {
+                playPromise.catch(() => {
                     vid.muted = true;
                     vid.play().catch(() => {});
                 });
+            }
             } else {
                 vid.pause();
                 vid.currentTime = 0; // Сбрасываем видео в начало при уходе из зоны видимости
@@ -323,10 +347,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const vid = addedEl.querySelector('video');
             if (vid) {
                 videoObserver.observe(vid);
-                vid.addEventListener('click', () => {
-                    if (vid.paused) vid.play();
-                    else vid.pause();
-                });
             }
         }
     };
