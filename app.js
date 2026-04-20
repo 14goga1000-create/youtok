@@ -596,10 +596,6 @@ document.addEventListener('DOMContentLoaded', () => {
             store.put(c).onsuccess = () => loadComments(currentCommentVideoId);
         };
     };
-
-    if (typeof initProfile === 'function') initProfile();
-});
-
     window.editComment = (cId) => {
         const newText = prompt("Редактировать комментарий:");
         if(!newText) return;
@@ -611,3 +607,6 @@ document.addEventListener('DOMContentLoaded', () => {
             store.put(c).onsuccess = () => loadComments(currentCommentVideoId);
         };
     };
+
+    if (typeof initProfile === 'function') initProfile();
+});
