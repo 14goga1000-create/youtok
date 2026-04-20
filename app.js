@@ -68,10 +68,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Обертка для проверки авторизации ---
     const requireAuth = (actionCallback) => {
         if (isLoggedIn) actionCallback();
-        else modalAuth.classList.remove('hidden');
+        else if (modalAuth) modalAuth.classList.remove('hidden');
+        else alert("Пожалуйста, войдите в аккаунт на главной странице!");
     };
 
-    btnAuthModal.addEventListener('click', () => {
+    btnAuthModal?.addEventListener('click', () => {
         if (isLoggedIn) {
             isLoggedIn = false;
             currentUser = null;
@@ -117,7 +118,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('auth-pass').value = '';
     });
 
-    btnUploadModal.addEventListener('click', () => requireAuth(() => modalUpload.classList.remove('hidden')));
+    btnUploadModal?.addEventListener('click', () => requireAuth(() => modalUpload?.classList.remove('hidden')));
     
     closeBtns.forEach(btn => {
         btn.addEventListener('click', () => {
@@ -125,7 +126,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    videoInput.addEventListener('change', (e) => {
+    videoInput?.addEventListener('change', (e) => {
         const file = e.target.files[0];
         if (!file) return;
         const videoElem = document.createElement('video');
@@ -156,7 +157,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    btnPublish.addEventListener('click', () => {
+    btnPublish?.addEventListener('click', () => {
         if (!currentVideoFile || isPublishing) return;
         isPublishing = true;
         btnPublish.innerText = "Проверка...";
@@ -431,7 +432,7 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     };
 
-    btnSendComment.addEventListener('click', () => {
+    btnSendComment?.addEventListener('click', () => {
         requireAuth(() => {
             const text = commentInput.value.trim();
             if (!text) return;
