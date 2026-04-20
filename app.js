@@ -27,32 +27,42 @@ document.addEventListener('DOMContentLoaded', () => {
     let usersDB = JSON.parse(localStorage.getItem('youtok_users')) || [];
     let isRegisterMode = false;
 
-    // --- Навигация и скролл ---
-    const scrollFeed = (direction) => {
-        const posts = Array.from(document.querySelectorAll('.video-post'));
-        if (!posts.length) return;
-        let currentIdx = posts.findIndex(p => p.getBoundingClientRect().top >= -10 && p.getBoundingClientRect().top <= window.innerHeight / 2);
-        if (currentIdx === -1) currentIdx = 0;
-        let nextIdx = currentIdx + direction;
-        if (nextIdx >= 0 && nextIdx < posts.length) {
-            posts[nextIdx].scrollIntoView({ behavior: 'smooth' });
-        }
-    };
+    // --- Логика скролла мышью (ЛКМ) и мобильные фиксы ---
+    let isDragging = false;
+    let isMoved = false;
+    let startY, scrollTop;
 
-    document.getElementById('btn-scroll-up')?.addEventListener('click', () => scrollFeed(-1));
-    document.getElementById('btn-scroll-down')?.addEventListener('click', () => scrollFeed(1));
-
-    let isWheeling = false;
-    videoFeed?.addEventListener('wheel', (e) => {
+    videoFeed?.addEventListener('mousedown', (e) => {
+        isDragging = true;
+        isMoved = false;
+        videoFeed.classList.add('dragging');
+        startY = e.pageY - videoFeed.offsetTop;
+        scrollTop = videoFeed.scrollTop;
+    });
+    videoFeed?.addEventListener('mouseleave', () => {
+        if(!isDragging) return;
+        isDragging = false;
+        videoFeed.classList.remove('dragging');
+    });
+    videoFeed?.addEventListener('mouseup', () => {
+        if(!isDragging) return;
+        isDragging = false;
+        setTimeout(() => videoFeed.classList.remove('dragging'), 10);
+    });
+    videoFeed?.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+        isMoved = true;
         e.preventDefault();
-        if (isWheeling) return;
-        isWheeling = true;
-        const dir = e.deltaY > 0 ? 1 : -1;
-        scrollFeed(dir);
-        setTimeout(() => isWheeling = false, 600); // Защита от быстрого колесика
-    }, { passive: false });
+        const y = e.pageY - videoFeed.offsetTop;
+        const walk = (y - startY) * 2; // Скорость перетаскивания
+        videoFeed.scrollTop = scrollTop - walk;
+    });
 
     videoFeed?.addEventListener('click', (e) => {
+        if (isMoved) {
+            isMoved = false;
+            return;
+        }
         const vid = e.target.closest('video');
         if (vid) {
             if (vid.muted) {
@@ -73,8 +83,17 @@ document.addEventListener('DOMContentLoaded', () => {
             if (document.querySelectorAll('.modal:not(.hidden)').length > 0) return;
             e.preventDefault();
             
-            const dir = e.key === 'ArrowDown' ? 1 : -1;
-            scrollFeed(dir);
+            const posts = Array.from(document.querySelectorAll('.video-post'));
+            if (!posts.length) return;
+            
+            let currentIdx = posts.findIndex(p => p.getBoundingClientRect().top >= -10 && p.getBoundingClientRect().top <= window.innerHeight / 2);
+            if (currentIdx === -1) currentIdx = 0;
+
+            let nextIdx = currentIdx;
+            if (e.key === 'ArrowDown' && currentIdx < posts.length - 1) nextIdx++;
+            else if (e.key === 'ArrowUp' && currentIdx > 0) nextIdx--;
+            
+            if (currentIdx !== nextIdx) posts[nextIdx].scrollIntoView({ behavior: 'smooth' });
         }
     });
 
@@ -88,9 +107,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const index = usersDB.findIndex(u => u.login === currentUser.login);
         if(index > -1) {
             usersDB[index] = currentUser;
-        } else {
-            usersDB.push(currentUser);
-        }
             localStorage.setItem('youtok_users', JSON.stringify(usersDB));
             localStorage.setItem('youtok_session', JSON.stringify(currentUser));
             syncLocalFilesMock();
@@ -175,7 +191,6 @@ document.addEventListener('DOMContentLoaded', () => {
             usersDB.push(currentUser);
             localStorage.setItem('youtok_users', JSON.stringify(usersDB));
             syncLocalFilesMock();
-            saveCurrentUser();
             alert("Регистрация успешна!");
         } else {
             currentUser = usersDB.find(u => (u.login === '@'+l || u.login === l) && u.pass === p);
@@ -347,7 +362,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 req.result.reverse().forEach(v => renderVideo(v));
             }
         };
-    };
+    });
     
     // --- Логика страницы профиля (profile.html) ---
     const profileAvatarDisplay = document.getElementById('profile-avatar-display');
@@ -377,6 +392,7 @@ document.addEventListener('DOMContentLoaded', () => {
         profileAvatarDisplay.src = getAvatar(currentUser.login);
         
         if(btnChangeAvatar) btnChangeAvatar.addEventListener('click', () => modalAvatar.classList.remove('hidden'));
+
         avatarInput?.addEventListener('change', (e) => {
             const f = e.target.files[0];
             if(!f) return;
@@ -425,14 +441,17 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             saveCurrentUser();
 
-            const tx = db.transaction('videos', 'readwrite');
-            const store = tx.objectStore('videos');
-            store.get(id).onsuccess = (e) => {
-                const data = e.target.result;
-                data.likes = isCurrentlyLiked ? data.likes - 1 : data.likes + 1;
-                store.put(data);
-                el.querySelector('.like-count').innerText = data.likes;
-            };
+            const v = globalVideosDB.find(vid => vid.id === id);
+            if (v) {
+                v.likes = isCurrentlyLiked ? v.likes - 1 : v.likes + 1;
+                el.querySelector('.like-count').innerText = v.likes;
+                
+                fetch('/api/videos', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'update', video: v })
+                }).catch(err => console.error('Ошибка обновления лайка:', err));
+            }
         });
     };
 
@@ -457,52 +476,62 @@ document.addEventListener('DOMContentLoaded', () => {
 
     window.editMyVideo = (id) => {
         requireAuth(() => {
-            const tx = db.transaction('videos', 'readonly');
-            tx.objectStore('videos').get(id).onsuccess = (e) => {
-                const v = e.target.result;
-                if(v.author !== currentUser.login) return alert("Можно редактировать только свои видео!");
-                document.getElementById('edit-video-id').value = id;
-                document.getElementById('edit-video-title').value = v.title || '';
-                document.getElementById('edit-video-desc').value = v.desc || '';
-                document.getElementById('modal-edit').classList.remove('hidden');
-            };
+            const v = globalVideosDB.find(vid => vid.id === id);
+            if (!v) return;
+            if(v.author !== currentUser.login) return alert("Можно редактировать только свои видео!");
+            document.getElementById('edit-video-id').value = id;
+            document.getElementById('edit-video-title').value = v.title || '';
+            document.getElementById('edit-video-desc').value = v.desc || '';
+            document.getElementById('modal-edit').classList.remove('hidden');
         });
     };
 
     document.getElementById('btn-save-edit')?.addEventListener('click', () => {
         const id = document.getElementById('edit-video-id').value;
-        const tx = db.transaction('videos', 'readwrite');
-        const store = tx.objectStore('videos');
-        store.get(id).onsuccess = (e) => {
-            const v = e.target.result;
-            v.title = document.getElementById('edit-video-title').value;
-            v.desc = document.getElementById('edit-video-desc').value;
-            store.put(v).onsuccess = () => {
-                document.getElementById('modal-edit').classList.add('hidden');
-                const post = document.getElementById(id);
-                if(post) {
-                    post.querySelector('.vid-title').innerText = v.title;
-                    post.querySelector('.vid-desc').innerText = v.desc;
-                }
-            };
-        };
+        const v = globalVideosDB.find(vid => vid.id === id);
+        if (!v) return;
+        v.title = document.getElementById('edit-video-title').value;
+        v.desc = document.getElementById('edit-video-desc').value;
+        
+        fetch('/api/videos', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'update', video: v })
+        }).then(() => {
+            document.getElementById('modal-edit').classList.add('hidden');
+            const post = document.getElementById(id);
+            if(post) {
+                post.querySelector('.vid-title').innerText = v.title;
+                post.querySelector('.vid-desc').innerText = v.desc;
+            }
+        }).catch(err => alert("Ошибка при редактировании!"));
     });
 
     window.deleteMyVideo = (id) => {
         requireAuth(() => {
-            const txCheck = db.transaction('videos', 'readonly');
-            txCheck.objectStore('videos').get(id).onsuccess = (e) => {
-                if(e.target.result.author !== currentUser.login) return alert("Можно удалять только свои видео!");
-                if (confirm("Удалить видео?")) {
-                    const tx = db.transaction('videos', 'readwrite');
-                    tx.objectStore('videos').delete(id);
-                    tx.oncomplete = () => {
-                        document.getElementById(id)?.remove();
-                        if (videoFeed.children.length === 0) videoFeed.innerHTML = '<h2 id="empty-msg" style="text-align:center; margin-top:40vh; color:#888;">Нет видео. Загрузите первое!</h2>';
-                    };
-                }
-            };
+            const v = globalVideosDB.find(vid => vid.id === id);
+            if (!v || v.author !== currentUser.login) return alert("Можно удалять только свои видео!");
+            if (confirm("Удалить видео?")) {
+                fetch('/api/videos', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'delete', videoId: id })
+                }).then(() => {
+                    globalVideosDB = globalVideosDB.filter(vid => vid.id !== id);
+                    document.getElementById(id)?.remove();
+                    if (videoFeed.children.length === 0) videoFeed.innerHTML = '<h2 id="empty-msg" style="text-align:center; margin-top:40vh; color:#888;">Нет видео. Загрузите первое!</h2>';
+                }).catch(err => alert("Ошибка удаления!"));
+            }
         });
+    };
+
+    // --- Синхронизация Комментов ---
+    const syncComments = () => {
+        fetch('/api/comments', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ comments: commentsDB })
+        }).catch(err => console.error('Ошибка сохранения комментов', err));
     };
 
     // --- Логика Комментариев ---
@@ -515,42 +544,38 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const loadComments = (videoId) => {
         commentsList.innerHTML = '';
-        const tx = db.transaction('comments', 'readonly');
-        const req = tx.objectStore('comments').getAll();
-        req.onsuccess = () => {
-            const comments = req.result.filter(c => c.videoId === videoId);
-            comments.sort((a, b) => (b.isPinned === true) - (a.isPinned === true) || b.id.localeCompare(a.id));
-            
-            if(comments.length === 0) {
-                commentsList.innerHTML = '<p style="color:#888;">Пока нет комментариев.</p>';
-            } else {
-                comments.forEach(c => {
-                    const isAuthor = c.author === currentCommentVideoAuthor;
-                    const canEditDelete = currentUser && (c.author === currentUser.login);
-                    const canPinDeleteAll = currentUser && (currentCommentVideoAuthor === currentUser.login);
-                    
-                    let actionsHTML = `<div class="comment-actions">`;
-                    if (canPinDeleteAll) {
-                        actionsHTML += `<span class="comment-action-btn" onclick="pinComment('${c.id}', ${c.isPinned})">${c.isPinned ? 'Открепить' : 'Закрепить'}</span>`;
-                    }
-                    if (canEditDelete) {
-                        actionsHTML += `<span class="comment-action-btn" onclick="editComment('${c.id}')">Изменить</span>`;
-                    }
-                    if (canEditDelete || canPinDeleteAll) {
-                        actionsHTML += `<span class="comment-action-btn" onclick="deleteComment('${c.id}')">Удалить</span>`;
-                    }
-                    actionsHTML += `</div>`;
+        const comments = commentsDB.filter(c => c.videoId === videoId);
+        comments.sort((a, b) => (b.isPinned === true) - (a.isPinned === true) || b.id.localeCompare(a.id));
+        
+        if(comments.length === 0) {
+            commentsList.innerHTML = '<p style="color:#888;">Пока нет комментариев.</p>';
+        } else {
+            comments.forEach(c => {
+                const isAuthor = c.author === currentCommentVideoAuthor;
+                const canEditDelete = currentUser && (c.author === currentUser.login);
+                const canPinDeleteAll = currentUser && (currentCommentVideoAuthor === currentUser.login);
+                
+                let actionsHTML = `<div class="comment-actions">`;
+                if (canPinDeleteAll) {
+                    actionsHTML += `<span class="comment-action-btn" onclick="pinComment('${c.id}', ${c.isPinned})">${c.isPinned ? 'Открепить' : 'Закрепить'}</span>`;
+                }
+                if (canEditDelete) {
+                    actionsHTML += `<span class="comment-action-btn" onclick="editComment('${c.id}')">Изменить</span>`;
+                }
+                if (canEditDelete || canPinDeleteAll) {
+                    actionsHTML += `<span class="comment-action-btn" onclick="deleteComment('${c.id}')">Удалить</span>`;
+                }
+                actionsHTML += `</div>`;
 
-                    commentsList.innerHTML += `
-                        <div class="comment-item ${c.isPinned ? 'pinned' : ''}">
-                            <div class="comment-author">${c.author} ${isAuthor ? '<span class="author-badge">Автор</span>' : ''} ${c.isPinned ? '<i class="fas fa-thumbtack" style="font-size:10px; margin-left:5px; color:#ff0050;"></i>' : ''}</div>
-                            <div>${c.text}</div>
-                            ${actionsHTML}
-                        </div>
-                    `;
-                });
-            }
-        };
+                commentsList.innerHTML += `
+                    <div class="comment-item ${c.isPinned ? 'pinned' : ''}">
+                        <div class="comment-author">${c.author} ${isAuthor ? '<span class="author-badge">Автор</span>' : ''} ${c.isPinned ? '<i class="fas fa-thumbtack" style="font-size:10px; margin-left:5px; color:#ff0050;"></i>' : ''}</div>
+                        <div>${c.text}</div>
+                        ${actionsHTML}
+                    </div>
+                `;
+            });
+        }
     };
 
     btnSendComment?.addEventListener('click', () => {
@@ -558,40 +583,38 @@ document.addEventListener('DOMContentLoaded', () => {
             const text = commentInput.value.trim();
             if (!text) return;
             const comment = { id: 'com-' + Date.now(), videoId: currentCommentVideoId, text: text, author: currentUser.login, isPinned: false };
-            const tx = db.transaction('comments', 'readwrite');
-            tx.objectStore('comments').add(comment);
-            tx.oncomplete = () => {
-                commentInput.value = '';
-                loadComments(currentCommentVideoId);
-            };
+            commentsDB.push(comment);
+            syncComments();
+            commentInput.value = '';
+            loadComments(currentCommentVideoId);
         });
     });
 
     window.deleteComment = (cId) => {
         if(!confirm("Удалить комментарий?")) return;
-        const tx = db.transaction('comments', 'readwrite');
-        tx.objectStore('comments').delete(cId);
-        tx.oncomplete = () => loadComments(currentCommentVideoId);
+        commentsDB = commentsDB.filter(c => c.id !== cId);
+        syncComments();
+        loadComments(currentCommentVideoId);
     };
 
-    window.pinComment = (cId, currentPinStatus) => {
-        const tx = db.transaction('comments', 'readwrite');
-        const store = tx.objectStore('comments');
-        store.get(cId).onsuccess = (e) => {
-            const c = e.target.result;
-            c.isPinned = !currentPinStatus;
-            store.put(c).onsuccess = () => loadComments(currentCommentVideoId);
-        };
+    window.pinComment = (cId, currentStatus) => {
+        const c = commentsDB.find(x => x.id === cId);
+        if (c) c.isPinned = !currentStatus;
+        syncComments();
+        loadComments(currentCommentVideoId);
     };
 
     window.editComment = (cId) => {
         const newText = prompt("Редактировать комментарий:");
         if(!newText) return;
-        const tx = db.transaction('comments', 'readwrite');
-        const store = tx.objectStore('comments');
-        store.get(cId).onsuccess = (e) => {
-            const c = e.target.result;
+        const c = commentsDB.find(x => x.id === cId);
+        if (c) {
             c.text = newText;
-            store.put(c).onsuccess = () => loadComments(currentCommentVideoId);
-        };
+            syncComments();
+            loadComments(currentCommentVideoId);
+        }
     };
+
+    // Запуск приложения
+    loadApp();
+});

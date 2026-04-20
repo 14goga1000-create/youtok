@@ -14,12 +14,17 @@ app.use(express.static(path.join(__dirname)));
 // --- ПРОСТАЯ БАЗА ДАННЫХ (Файл db.json на сервере) ---
 const dbFile = path.join(__dirname, 'db.json');
 
-// Создаем базу, если ее еще нет
-if (!fs.existsSync(dbFile)) {
-    fs.writeFileSync(dbFile, JSON.stringify({ users: [], videos: [], comments: [] }));
-}
+const ensureDBExists = () => {
+    if (!fs.existsSync(dbFile)) {
+        fs.writeFileSync(dbFile, JSON.stringify({ users: [], videos: [], comments: [] }));
+    }
+};
+ensureDBExists();
 
-const readDB = () => JSON.parse(fs.readFileSync(dbFile, 'utf8'));
+const readDB = () => {
+    ensureDBExists();
+    return JSON.parse(fs.readFileSync(dbFile, 'utf8'));
+};
 const writeDB = (data) => fs.writeFileSync(dbFile, JSON.stringify(data, null, 2));
 
 // --- API РОУТЫ (Наш Бэкенд) ---
