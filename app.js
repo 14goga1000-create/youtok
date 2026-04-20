@@ -392,17 +392,31 @@ document.addEventListener('DOMContentLoaded', () => {
                 };
                 r.readAsDataURL(f);
             });
+        } else {
+            if(btnChangeAvatar) btnChangeAvatar.style.display = 'none';
+        }
 
-            const myVideos = globalVideosDB.filter(v => v.author === currentUser.login);
-            const grid = document.getElementById('profile-page-grid');
-            const totalLikes = myVideos.reduce((sum, v) => sum + v.likes, 0);
-            if(document.getElementById('profile-total-likes')) document.getElementById('profile-total-likes').innerText = totalLikes;
+        initDB.then(() => {
+            const tx = db.transaction('videos', 'readonly');
+            tx.objectStore('videos').getAll().onsuccess = (e) => {
+                const allVideos = e.target.result;
+                const myVideos = allVideos.filter(v => v.author === targetUserLogin);
+                const grid = document.getElementById('profile-page-grid');
+                const totalLikes = myVideos.reduce((sum, v) => sum + v.likes, 0);
+                if(document.getElementById('profile-total-likes')) document.getElementById('profile-total-likes').innerText = totalLikes;
 
-            if(grid) {
-                grid.innerHTML = myVideos.map(v => 
-                    `<video src="${v.base64}" poster="${v.cover || ''}" style="width:100%; height:150px; object-fit:contain; background:#000; cursor:pointer;" onclick="window.location.href='index.html'"></video>`
-                ).join('');
-            }
+                const followingCount = targetUser && targetUser.following ? targetUser.following.length : 0;
+                const followersCount = usersDB.filter(u => u.following && u.following.includes(targetUserLogin)).length;
+                if(document.getElementById('profile-following-count')) document.getElementById('profile-following-count').innerText = followingCount;
+                if(document.getElementById('profile-followers-count')) document.getElementById('profile-followers-count').innerText = followersCount;
+
+                if(grid) {
+                    grid.innerHTML = myVideos.map(v => 
+                        `<video src="${v.base64 || URL.createObjectURL(v.blob)}" poster="${v.cover || ''}" style="width:100%; height:150px; object-fit:contain; background:#000; cursor:pointer;" onclick="window.location.href='index.html'"></video>`
+                    ).join('');
+                }
+            };
+        });
         } else if (profilePageUsername) {
             profilePageUsername.innerText = "Пожалуйста, войдите в аккаунт на главной странице.";
             if(btnChangeAvatar) btnChangeAvatar.style.display = 'none';
@@ -582,6 +596,9 @@ document.addEventListener('DOMContentLoaded', () => {
             store.put(c).onsuccess = () => loadComments(currentCommentVideoId);
         };
     };
+
+    if (typeof initProfile === 'function') initProfile();
+});
 
     window.editComment = (cId) => {
         const newText = prompt("Редактировать комментарий:");
