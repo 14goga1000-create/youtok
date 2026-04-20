@@ -27,42 +27,32 @@ document.addEventListener('DOMContentLoaded', () => {
     let usersDB = JSON.parse(localStorage.getItem('youtok_users')) || [];
     let isRegisterMode = false;
 
-    // --- Логика скролла мышью (ЛКМ) и мобильные фиксы ---
-    let isDragging = false;
-    let isMoved = false;
-    let startY, scrollTop;
+    // --- Навигация и скролл ---
+    const scrollFeed = (direction) => {
+        const posts = Array.from(document.querySelectorAll('.video-post'));
+        if (!posts.length) return;
+        let currentIdx = posts.findIndex(p => p.getBoundingClientRect().top >= -10 && p.getBoundingClientRect().top <= window.innerHeight / 2);
+        if (currentIdx === -1) currentIdx = 0;
+        let nextIdx = currentIdx + direction;
+        if (nextIdx >= 0 && nextIdx < posts.length) {
+            posts[nextIdx].scrollIntoView({ behavior: 'smooth' });
+        }
+    };
 
-    videoFeed?.addEventListener('mousedown', (e) => {
-        isDragging = true;
-        isMoved = false;
-        videoFeed.classList.add('dragging');
-        startY = e.pageY - videoFeed.offsetTop;
-        scrollTop = videoFeed.scrollTop;
-    });
-    videoFeed?.addEventListener('mouseleave', () => {
-        if(!isDragging) return;
-        isDragging = false;
-        videoFeed.classList.remove('dragging');
-    });
-    videoFeed?.addEventListener('mouseup', () => {
-        if(!isDragging) return;
-        isDragging = false;
-        setTimeout(() => videoFeed.classList.remove('dragging'), 10);
-    });
-    videoFeed?.addEventListener('mousemove', (e) => {
-        if (!isDragging) return;
-        isMoved = true;
+    document.getElementById('btn-scroll-up')?.addEventListener('click', () => scrollFeed(-1));
+    document.getElementById('btn-scroll-down')?.addEventListener('click', () => scrollFeed(1));
+
+    let isWheeling = false;
+    videoFeed?.addEventListener('wheel', (e) => {
         e.preventDefault();
-        const y = e.pageY - videoFeed.offsetTop;
-        const walk = (y - startY) * 2; // Скорость перетаскивания
-        videoFeed.scrollTop = scrollTop - walk;
-    });
+        if (isWheeling) return;
+        isWheeling = true;
+        const dir = e.deltaY > 0 ? 1 : -1;
+        scrollFeed(dir);
+        setTimeout(() => isWheeling = false, 600); // Защита от быстрого колесика
+    }, { passive: false });
 
     videoFeed?.addEventListener('click', (e) => {
-        if (isMoved) {
-            isMoved = false;
-            return;
-        }
         const vid = e.target.closest('video');
         if (vid) {
             if (vid.muted) {
@@ -83,17 +73,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (document.querySelectorAll('.modal:not(.hidden)').length > 0) return;
             e.preventDefault();
             
-            const posts = Array.from(document.querySelectorAll('.video-post'));
-            if (!posts.length) return;
-            
-            let currentIdx = posts.findIndex(p => p.getBoundingClientRect().top >= -10 && p.getBoundingClientRect().top <= window.innerHeight / 2);
-            if (currentIdx === -1) currentIdx = 0;
-
-            let nextIdx = currentIdx;
-            if (e.key === 'ArrowDown' && currentIdx < posts.length - 1) nextIdx++;
-            else if (e.key === 'ArrowUp' && currentIdx > 0) nextIdx--;
-            
-            if (currentIdx !== nextIdx) posts[nextIdx].scrollIntoView({ behavior: 'smooth' });
+            const dir = e.key === 'ArrowDown' ? 1 : -1;
+            scrollFeed(dir);
         }
     });
 
@@ -107,6 +88,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const index = usersDB.findIndex(u => u.login === currentUser.login);
         if(index > -1) {
             usersDB[index] = currentUser;
+        } else {
+            usersDB.push(currentUser);
+        }
             localStorage.setItem('youtok_users', JSON.stringify(usersDB));
             localStorage.setItem('youtok_session', JSON.stringify(currentUser));
             syncLocalFilesMock();
@@ -191,6 +175,7 @@ document.addEventListener('DOMContentLoaded', () => {
             usersDB.push(currentUser);
             localStorage.setItem('youtok_users', JSON.stringify(usersDB));
             syncLocalFilesMock();
+            saveCurrentUser();
             alert("Регистрация успешна!");
         } else {
             currentUser = usersDB.find(u => (u.login === '@'+l || u.login === l) && u.pass === p);
@@ -362,7 +347,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 req.result.reverse().forEach(v => renderVideo(v));
             }
         };
-    });
+    };
     
     // --- Логика страницы профиля (profile.html) ---
     const profileAvatarDisplay = document.getElementById('profile-avatar-display');
@@ -392,7 +377,6 @@ document.addEventListener('DOMContentLoaded', () => {
         profileAvatarDisplay.src = getAvatar(currentUser.login);
         
         if(btnChangeAvatar) btnChangeAvatar.addEventListener('click', () => modalAvatar.classList.remove('hidden'));
-
         avatarInput?.addEventListener('change', (e) => {
             const f = e.target.files[0];
             if(!f) return;
@@ -611,4 +595,3 @@ document.addEventListener('DOMContentLoaded', () => {
             store.put(c).onsuccess = () => loadComments(currentCommentVideoId);
         };
     };
-});
