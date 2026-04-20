@@ -23,6 +23,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentUser = JSON.parse(sessionStorage.getItem('youtok_session')) || null;
     let isLoggedIn = !!currentUser;
     let currentCommentVideoId = null;
+    let currentCommentVideoAuthor = null;
     let usersDB = JSON.parse(localStorage.getItem('youtok_users')) || [];
     let isRegisterMode = false;
 
@@ -30,6 +31,17 @@ document.addEventListener('DOMContentLoaded', () => {
         if (btnAuthModal) btnAuthModal.innerText = "Выйти";
         if (btnProfile) btnProfile.classList.remove('hidden');
     }
+
+    const saveCurrentUser = () => {
+        if (!currentUser) return;
+        const index = usersDB.findIndex(u => u.login === currentUser.login);
+        if(index > -1) {
+            usersDB[index] = currentUser;
+            localStorage.setItem('youtok_users', JSON.stringify(usersDB));
+            sessionStorage.setItem('youtok_session', JSON.stringify(currentUser));
+            syncLocalFilesMock();
+        }
+    };
 
     // --- Инициализация локальной БД (IndexedDB) ---
     let db;
@@ -99,7 +111,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         if (isRegisterMode) {
             if (usersDB.find(u => u.login === '@'+l || u.login === l)) return alert("Пользователь уже существует!");
-            currentUser = { login: '@' + l, pass: p };
+            currentUser = { login: '@' + l, pass: p, likedVideos: [], following: [] };
             usersDB.push(currentUser);
             localStorage.setItem('youtok_users', JSON.stringify(usersDB));
             syncLocalFilesMock();
@@ -207,19 +219,23 @@ document.addEventListener('DOMContentLoaded', () => {
         if (emptyMsg) emptyMsg.remove();
 
         const videoUrl = video.base64 || URL.createObjectURL(video.blob);
+        const isLiked = currentUser?.likedVideos?.includes(video.id) ? 'liked' : '';
+        const isFollowed = currentUser?.following?.includes(video.author) ? 'followed' : '';
+        const followIcon = isFollowed ? 'fa-check' : 'fa-plus';
+
         const postHTML = `
             <div class="video-post" id="${video.id}">
                 <video src="${videoUrl}" poster="${video.cover || ''}" style="filter: ${video.effect};" loop playsinline onclick="this.paused ? this.play() : this.pause()"></video>
                 <div class="sidebar">
-                    <div class="action-item avatar-wrapper" onclick="toggleFollow(this)">
+                    <div class="action-item avatar-wrapper ${isFollowed}" onclick="toggleFollow('${video.author}', this)">
                         <img src="${getAvatar(video.author)}" alt="Avatar">
-                        <div class="follow-badge"><i class="fas fa-plus"></i></div>
+                        <div class="follow-badge"><i class="fas ${followIcon}"></i></div>
                     </div>
-                    <div class="action-item" onclick="toggleLike('${video.id}', this)">
+                    <div class="action-item ${isLiked}" onclick="toggleLike('${video.id}', this)">
                         <i class="fas fa-heart"></i>
                         <span class="like-count">${video.likes}</span>
                     </div>
-                    <div class="action-item" onclick="openComments('${video.id}')">
+                    <div class="action-item" onclick="openComments('${video.id}', '${video.author}')">
                         <i class="fas fa-comment"></i>
                         <span>Комменты</span>
                     </div>
@@ -331,26 +347,45 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Глобальные действия (Лайки, Подписки, Удаление) ---
     window.toggleLike = (id, el) => {
         requireAuth(() => {
-            el.classList.toggle('liked');
+            if (!currentUser.likedVideos) currentUser.likedVideos = [];
+            const isCurrentlyLiked = el.classList.contains('liked');
+            
+            if (isCurrentlyLiked) {
+                el.classList.remove('liked');
+                currentUser.likedVideos = currentUser.likedVideos.filter(v => v !== id);
+            } else {
+                el.classList.add('liked');
+                currentUser.likedVideos.push(id);
+            }
+            saveCurrentUser();
+
             const tx = db.transaction('videos', 'readwrite');
             const store = tx.objectStore('videos');
-            const req = store.get(id);
-            req.onsuccess = () => {
-                const data = req.result;
-                if (el.classList.contains('liked')) data.likes++;
-                else data.likes--;
+            store.get(id).onsuccess = (e) => {
+                const data = e.target.result;
+                data.likes = isCurrentlyLiked ? data.likes - 1 : data.likes + 1;
                 store.put(data);
                 el.querySelector('.like-count').innerText = data.likes;
             };
         });
     };
 
-    window.toggleFollow = (el) => {
+    window.toggleFollow = (author, el) => {
         requireAuth(() => {
-            el.classList.toggle('followed');
-            const icon = el.querySelector('.follow-badge i');
-            if(el.classList.contains('followed')) icon.classList.replace('fa-plus', 'fa-check');
-            else icon.classList.replace('fa-check', 'fa-plus');
+            if (author === currentUser.login) return alert("Нельзя подписаться на самого себя!");
+            if (!currentUser.following) currentUser.following = [];
+            
+            const isFollowing = el.classList.contains('followed');
+            if (isFollowing) {
+                el.classList.remove('followed');
+                el.querySelector('.follow-badge i').classList.replace('fa-check', 'fa-plus');
+                currentUser.following = currentUser.following.filter(a => a !== author);
+            } else {
+                el.classList.add('followed');
+                el.querySelector('.follow-badge i').classList.replace('fa-plus', 'fa-check');
+                currentUser.following.push(author);
+            }
+            saveCurrentUser();
         });
     };
 
@@ -405,8 +440,9 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     // --- Логика Комментариев ---
-    window.openComments = (id) => {
+    window.openComments = (id, author) => {
         currentCommentVideoId = id;
+        currentCommentVideoAuthor = author;
         modalComments.classList.remove('hidden');
         loadComments(id);
     };
@@ -417,14 +453,33 @@ document.addEventListener('DOMContentLoaded', () => {
         const req = tx.objectStore('comments').getAll();
         req.onsuccess = () => {
             const comments = req.result.filter(c => c.videoId === videoId);
+            comments.sort((a, b) => (b.isPinned === true) - (a.isPinned === true) || b.id.localeCompare(a.id));
+            
             if(comments.length === 0) {
                 commentsList.innerHTML = '<p style="color:#888;">Пока нет комментариев.</p>';
             } else {
                 comments.forEach(c => {
+                    const isAuthor = c.author === currentCommentVideoAuthor;
+                    const canEditDelete = currentUser && (c.author === currentUser.login);
+                    const canPinDeleteAll = currentUser && (currentCommentVideoAuthor === currentUser.login);
+                    
+                    let actionsHTML = `<div class="comment-actions">`;
+                    if (canPinDeleteAll) {
+                        actionsHTML += `<span class="comment-action-btn" onclick="pinComment('${c.id}', ${c.isPinned})">${c.isPinned ? 'Открепить' : 'Закрепить'}</span>`;
+                    }
+                    if (canEditDelete) {
+                        actionsHTML += `<span class="comment-action-btn" onclick="editComment('${c.id}')">Изменить</span>`;
+                    }
+                    if (canEditDelete || canPinDeleteAll) {
+                        actionsHTML += `<span class="comment-action-btn" onclick="deleteComment('${c.id}')">Удалить</span>`;
+                    }
+                    actionsHTML += `</div>`;
+
                     commentsList.innerHTML += `
-                        <div class="comment-item">
-                            <div class="comment-author">${c.author}</div>
+                        <div class="comment-item ${c.isPinned ? 'pinned' : ''}">
+                            <div class="comment-author">${c.author} ${isAuthor ? '<span class="author-badge">Автор</span>' : ''} ${c.isPinned ? '<i class="fas fa-thumbtack" style="font-size:10px; margin-left:5px; color:#ff0050;"></i>' : ''}</div>
                             <div>${c.text}</div>
+                            ${actionsHTML}
                         </div>
                     `;
                 });
@@ -436,7 +491,7 @@ document.addEventListener('DOMContentLoaded', () => {
         requireAuth(() => {
             const text = commentInput.value.trim();
             if (!text) return;
-            const comment = { id: 'com-' + Date.now(), videoId: currentCommentVideoId, text: text, author: '@my_profile' };
+            const comment = { id: 'com-' + Date.now(), videoId: currentCommentVideoId, text: text, author: currentUser.login, isPinned: false };
             const tx = db.transaction('comments', 'readwrite');
             tx.objectStore('comments').add(comment);
             tx.oncomplete = () => {
@@ -445,4 +500,33 @@ document.addEventListener('DOMContentLoaded', () => {
             };
         });
     });
+
+    window.deleteComment = (cId) => {
+        if(!confirm("Удалить комментарий?")) return;
+        const tx = db.transaction('comments', 'readwrite');
+        tx.objectStore('comments').delete(cId);
+        tx.oncomplete = () => loadComments(currentCommentVideoId);
+    };
+
+    window.pinComment = (cId, currentPinStatus) => {
+        const tx = db.transaction('comments', 'readwrite');
+        const store = tx.objectStore('comments');
+        store.get(cId).onsuccess = (e) => {
+            const c = e.target.result;
+            c.isPinned = !currentPinStatus;
+            store.put(c).onsuccess = () => loadComments(currentCommentVideoId);
+        };
+    };
+
+    window.editComment = (cId) => {
+        const newText = prompt("Редактировать комментарий:");
+        if(!newText) return;
+        const tx = db.transaction('comments', 'readwrite');
+        const store = tx.objectStore('comments');
+        store.get(cId).onsuccess = (e) => {
+            const c = e.target.result;
+            c.text = newText;
+            store.put(c).onsuccess = () => loadComments(currentCommentVideoId);
+        };
+    };
 });
