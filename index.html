@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTok</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <header class="navbar">
+        <div class="logo">YouTok</div>
+        <div class="nav-controls">
+            <a href="profile.html" id="btn-profile" class="btn secondary hidden" style="text-decoration:none;"><i class="fas fa-user"></i> Профиль</a>
+            <button id="btn-upload-modal" class="btn primary"><i class="fas fa-plus"></i> Загрузить</button>
+            <button id="btn-auth-modal" class="btn secondary">Войти</button>
+        </div>
+    </header>
+    <main class="feed" id="video-feed">
+    </main>
+    <div id="modal-upload" class="modal hidden">
+        <div class="modal-content">
+            <button class="close-btn">&times;</button>
+            <h2>Загрузить видео</h2>
+            <div class="upload-area">
+                <input type="text" id="video-title" class="input-field" placeholder="Название видео">
+                <textarea id="video-desc" class="input-field" placeholder="Описание видео"></textarea>
+                <label style="display:block; text-align:left; margin-top:10px; color:#aaa; font-size:12px;">Обложка (опционально):</label>
+                <input type="file" id="cover-input" accept="image/*" class="input-field">
+                <input type="file" id="video-input" accept="video/mp4,video/webm,video/ogg">
+                <p class="hint">Максимум 3 минуты. Размер до 100MB.</p>
+            </div>
+            <div class="effects-selection hidden" id="effects-panel">
+                <h3>Выберите эффект:</h3>
+                <div class="effects-grid">
+                    <button class="effect-btn active" data-filter="none">Нет</button>
+                    <button class="effect-btn" data-filter="grayscale(100%)">Ч/Б</button>
+                    <button class="effect-btn" data-filter="sepia(100%)">Сепия</button>
+                    <button class="effect-btn" data-filter="invert(100%)">Негатив</button>
+                </div>
+                <button id="btn-publish" class="btn primary full-width">Опубликовать</button>
+            </div>
+        </div>
+    </div>
+    <div id="modal-auth" class="modal hidden">
+        <div class="modal-content auth-content">
+            <button class="close-btn">&times;</button>
+            <h2 id="auth-title">Вход в YouTok</h2>
+            <input type="text" id="auth-login" placeholder="Логин (без @)" class="input-field">
+            <input type="password" id="auth-pass" placeholder="Пароль" class="input-field">
+            <button id="btn-login-action" class="btn primary full-width">Войти</button>
+            <p class="hint" style="cursor:pointer; margin-top:10px;" id="toggle-auth">Нет аккаунта? Зарегистрироваться</p>
+        </div>
+    </div>
+    <div id="modal-comments" class="modal hidden">
+        <div class="modal-content comments-content">
+            <button class="close-btn">&times;</button>
+            <h2>Комментарии</h2>
+            <div id="comments-list" class="comments-list"></div>
+            <div class="comment-input-area">
+                <input type="text" id="comment-input" class="input-field" placeholder="Введите комментарий..." style="margin: 0;">
+                <button id="btn-send-comment" class="btn primary">Отправить</button>
+            </div>
+        </div>
+    </div>
+    <div id="modal-edit" class="modal hidden">
+        <div class="modal-content">
+            <button class="close-btn">&times;</button>
+            <h2>Редактировать видео</h2>
+            <input type="hidden" id="edit-video-id">
+            <input type="text" id="edit-video-title" class="input-field" placeholder="Новое название">
+            <textarea id="edit-video-desc" class="input-field" placeholder="Новое описание"></textarea>
+            <button id="btn-save-edit" class="btn primary full-width">Сохранить</button>
+        </div>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>

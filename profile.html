@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTok - Профиль</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body style="overflow-y: auto; background-color: #000;">
+    <header class="navbar">
+        <div class="logo" style="cursor:pointer;" onclick="window.location.href='index.html'">YouTok</div>
+        <div class="nav-controls">
+            <a href="index.html" class="btn secondary" style="text-decoration:none;">На главную</a>
+        </div>
+    </header>
+    <main class="profile-page" style="margin-top: 80px; padding: 20px; text-align: center; max-width: 600px; margin-left: auto; margin-right: auto;">
+        <div class="profile-header">
+            <img id="profile-avatar-display" src="https://api.dicebear.com/7.x/avataaars/svg?seed=guest" alt="Avatar" style="width:120px; height:120px; border-radius:50%; object-fit:cover; margin-bottom:15px; border:3px solid #ff0050; background: #fff;">
+            <h2 id="profile-page-username" style="font-size: 24px; margin-bottom: 20px;">@username</h2>
+            
+            <div class="profile-stats" style="display:flex; justify-content:center; gap:20px; margin-bottom:20px; font-size:14px;">
+                <div class="stat-item"><strong>0</strong><br><span style="color:#aaa;">Подписок</span></div>
+                <div class="stat-item"><strong>0</strong><br><span style="color:#aaa;">Подписчиков</span></div>
+                <div class="stat-item"><strong id="profile-total-likes">0</strong><br><span style="color:#aaa;">Лайков</span></div>
+            </div>
+
+            <div>
+                <button id="btn-change-avatar" class="btn secondary" style="cursor:pointer;">
+                    <i class="fas fa-camera"></i> Сменить аватарку
+                </button>
+            </div>
+        </div>
+        <hr style="border-color:#333; margin:30px 0;">
+        <h3 style="text-align: left; margin-bottom: 15px;">Мои видео</h3>
+        <div class="profile-grid" id="profile-page-grid"></div>
+    </main>
+
+    <div id="modal-avatar" class="modal hidden">
+        <div class="modal-content">
+            <button class="close-btn" onclick="document.getElementById('modal-avatar').classList.add('hidden')">&times;</button>
+            <h2>Выбор аватарки</h2>
+            <div class="avatar-presets" style="display:flex; gap:10px; justify-content:center; margin: 20px 0; flex-wrap:wrap;">
+                <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Felix" class="preset-img" onclick="selectPresetAvatar(this.src)">
+                <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Aneka" class="preset-img" onclick="selectPresetAvatar(this.src)">
+                <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Jack" class="preset-img" onclick="selectPresetAvatar(this.src)">
+                <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Mimi" class="preset-img" onclick="selectPresetAvatar(this.src)">
+            </div>
+            <p style="color:#aaa; margin-bottom:10px;">или</p>
+            <label class="btn primary full-width" style="cursor:pointer; display:block;">
+                Загрузить свою
+                <input type="file" id="avatar-input" accept="image/*" style="display:none;">
+            </label>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
